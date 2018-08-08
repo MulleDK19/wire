@@ -302,6 +302,13 @@ if CLIENT then
     CPULib.Debugger.Variables = {}
     CPULib.Debugger.FirstFile = nil
     CPULib.DebugUpdateHighlights()
+	
+	-- Remove current statement
+	if ZCPU_Editor then
+	  for tab=1,ZCPU_Editor:GetNumTabs() do
+  	    ZCPU_Editor:GetEditor(tab):ClearHighlightedLines()
+	  end
+	end
   end
 
   net.Receive("CPULib.InvalidateDebugger", function(netlen)
