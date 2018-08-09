@@ -312,10 +312,11 @@ function EDITOR:Paint()
 
   if CPULib.DebuggerAttached then
     local debugWindowText = CPULib.GetDebugWindowText()
+	local perColumn = 33
     for k,v in ipairs(debugWindowText) do
       if v ~= "" then
-        local y = (k % 24)
-        local x = 15*(1 + math_floor(#debugWindowText / 24) - math_floor(k / 24))
+        local y = (k % perColumn)
+        local x = 15*(1 + math_floor(#debugWindowText / perColumn) - math_floor(k / perColumn))
         draw_WordBox(2, self:GetWide()-self.FontWidth*x, self.FontHeight*(-1+y), v, "E2SmallFont", Color(0,0,0,255), Color(255,255,255,255) )
       end
     end
