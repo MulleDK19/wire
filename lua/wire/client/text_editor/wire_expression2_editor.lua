@@ -1909,7 +1909,7 @@ function Editor:Setup(nTitle, nLocation, nEditorType)
 		DebugForward:SetText("Step Forward")
 		DebugForward.Font = "E2SmallFont"
 		DebugForward.DoClick = function()
-			local currentPosition = CPULib.Debugger.PositionByPointer[CPULib.Debugger.Variables.IP]
+			local currentPosition = CPULib.Debugger.PositionByPointer[CPULib.Debugger.Variables.CS+CPULib.Debugger.Variables.IP]
 			if currentPosition then
 				local linePointers = CPULib.Debugger.PointersByLine[currentPosition.Line .. ":" .. currentPosition.File]
 				if linePointers then -- Run till end of line
