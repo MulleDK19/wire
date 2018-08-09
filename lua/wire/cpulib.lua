@@ -24,6 +24,7 @@ if CLIENT then
   CPULib.DebuggerAttached = false
   CPULib.Debugger = {}
   CPULib.Debugger.Variables = {}
+  CPULib.Debugger.Stack = {}
   CPULib.Debugger.SourceTab = nil
 
   -- Reset on recompile
@@ -85,7 +86,7 @@ if CLIENT then
   function CPULib.SelectTab(editor,fileName)
     if not editor then return end
     local editorType = string.lower(editor.EditorType)
-    local fullFileName = editorType.."chip\\"..fileName
+    local fullFileName = editorType.."chip/"..fileName
 
     if string.sub(fileName,1,7) == editorType.."chip" then
       fullFileName = fileName
@@ -234,7 +235,12 @@ if CLIENT then
     local csvar = string.upper(var)
 
     if CPULib.Debugger.Variables[csvar] then
-      return var.." = "..CPULib.Debugger.Variables[csvar]
+	  if not CPULib.Debugger.MemoryVariableByName[csvar] then
+        return var.." = "..CPULib.Debugger.Variables[csvar]
+	  else
+		local ptr = CPULib.Debugger.MemoryVariableByName[csvar]
+	    return ptr .. ": "..var.." = "..CPULib.Debugger.Variables[csvar]
+	  end
     else
       if CPULib.Debugger.Labels[csvar] then
         if CPULib.Debugger.Labels[csvar].Offset then
@@ -245,11 +251,70 @@ if CLIENT then
           end
           return var.." = ..."
         elseif CPULib.Debugger.Labels[csvar].Pointer then
-          return var.." = ptr "..CPULib.Debugger.Labels[csvar].Pointer
+		  local ptr = CPULib.Debugger.Labels[csvar].Pointer
+          return ptr..": "..var.." = ?"
         else
           return var.." = cannot resolve"
         end
-      end
+	  elseif CPULib.Debugger.Labels["locals"] then
+		  -- Find a local variable with this name.
+		  local localsTable = CPULib.Debugger.Labels["locals"]
+		  local xeip = (CPULib.Debugger.Variables.CS or 0) + (CPULib.Debugger.Variables.IP or 0)
+		  local finalLocalTable = nil
+	      for labelName, labelTable in pairs(CPULib.Debugger.Labels) do
+			if labelName == "locals" then continue end
+			local labelPointer = labelTable.Pointer or -10000
+			if xeip >= labelPointer then
+				local functionLocalsTable = localsTable[labelName]
+				if functionLocalsTable then
+					local localTable = functionLocalsTable[csvar]
+					if localTable then
+						print(labelName .. " has local variable " .. var)
+						finalLocalTable = localTable
+						finalLocalTableFunctionName = labelName
+					end
+				end
+			end
+		  end
+		  
+		  if finalLocalTable then
+			if finalLocalTable["StackOffset"] then
+				local stackOffset = finalLocalTable.StackOffset
+				local ebpEsp = CPULib.Debugger.Variables.EBP - CPULib.Debugger.Variables.ESP
+				local stackAddress = CPULib.Debugger.Variables.SS + CPULib.Debugger.Variables.EBP + stackOffset
+				local stackValue = CPULib.Debugger.Stack[math.abs(ebpEsp+stackOffset)]
+				if stackOffset >= 0 then
+					return "[ebp+"..stackOffset.."] / "..stackAddress..": "..csvar.." = "..(stackValue or "OUT OF SCOPE")
+				else
+					return "[ebp-"..math.abs(stackOffset).."] / "..stackAddress..": "..csvar.." = "..(stackValue or "OUT OF SCOPE")
+				end
+			end
+		  end
+	  end
+		-- Lastly, look up instruction info
+		local opcode = CPULib.MnemonicToInstructionTable[string.upper(csvar)]
+		if opcode then
+			local instruction = CPULib.InstructionTable[opcode]
+			if instruction then
+				local set = instruction.Set
+				opcode = instruction.Opcode or 0
+				local mnemonic = instruction.Mnemonic or "ERROR"
+				local reference = instruction.Reference or "NO DESCRIPTION"
+				local op1 = instruction.Operand1
+				local op2 = instruction.Operand2
+				if op1 == "" then op1 = nil end
+				if op2 == "" then op2 = nil end
+				local finalDescription = set .. ": " .. opcode .. " " .. mnemonic
+				if op1 then
+					finalDescription = finalDescription .. " " .. op1
+				end
+				if op2 then
+					finalDescription = finalDescription .. ", " .. op2
+				end
+				finalDescription = finalDescription .. "     // " .. reference
+				return finalDescription
+			end
+		end
     end
   end
 
@@ -266,6 +331,15 @@ if CLIENT then
       "EDI = "..(CPULib.Debugger.Variables.EDI or "#####"),
       "EBP = "..(CPULib.Debugger.Variables.EBP or "#####"),
       "ESP = "..(CPULib.Debugger.Variables.ESP or "#####"),
+      "",
+	  "CS = "..(CPULib.Debugger.Variables.CS or "#####"),
+	  "SS = "..(CPULib.Debugger.Variables.SS or "#####"),
+	  "DS = "..(CPULib.Debugger.Variables.DS or "#####"),
+	  "ES = "..(CPULib.Debugger.Variables.ES or "#####"),
+	  "GS = "..(CPULib.Debugger.Variables.GS or "#####"),
+	  "FS = "..(CPULib.Debugger.Variables.FS or "#####"),
+	  "KS = "..(CPULib.Debugger.Variables.KS or "#####"),
+	  "LS = "..(CPULib.Debugger.Variables.LS or "#####"),
     }
 
     table.insert(result,"")
@@ -280,9 +354,23 @@ if CLIENT then
     table.insert(result,"")
     if CPULib.Debugger.Variables.IP == INVALID_BREAKPOINT_IP then
       table.insert(result,"IP = #####")
+      table.insert(result,"XEIP = #####")
     else
       table.insert(result,"IP = "..(CPULib.Debugger.Variables.IP or "#####"))
+	  local ip = CPULib.Debugger.Variables.IP
+	  local cs = CPULib.Debugger.Variables.CS
+	  if ip and cs then
+		table.insert(result,"XEIP = "..(ip+cs))
+	  else
+	    table.insert(result,"XEIP = "..(ip+cs or "#####"))
+	  end
     end
+	
+	if wire_cpu_show_all_registers:GetFloat() == 1 then
+		for stackOffset, stack in pairs(CPULib.Debugger.Stack) do
+			table.insert(result, "[ESP+"..stackOffset.."] = " .. stack)
+		end
+	end
 
     if CPULib.InterruptText then
       table.insert(result,"")
@@ -300,6 +388,7 @@ if CLIENT then
     CPULib.Debugger.MemoryVariableByName = {}
     CPULib.Debugger.Breakpoint = {}
     CPULib.Debugger.Variables = {}
+    CPULib.Debugger.Stack = {}
     CPULib.Debugger.FirstFile = nil
     CPULib.DebugUpdateHighlights()
 	
@@ -352,14 +441,15 @@ if CLIENT then
   function CPULib.DebugUpdateHighlights(dontForcePosition)
     if ZCPU_Editor then
       -- Highlight current position
-      local currentPosition = CPULib.Debugger.PositionByPointer[CPULib.Debugger.Variables.IP]
+	  local xeip = (CPULib.Debugger.Variables.IP or 0) + (CPULib.Debugger.Variables.CS or 0)
+      local currentPosition = CPULib.Debugger.PositionByPointer[xeip]
 
+      -- Clear all highlighted lines
+      for tab=1,ZCPU_Editor:GetNumTabs() do
+        ZCPU_Editor:GetEditor(tab):ClearHighlightedLines()
+      end
+		
       if currentPosition then
-        -- Clear all highlighted lines
-        for tab=1,ZCPU_Editor:GetNumTabs() do
-          ZCPU_Editor:GetEditor(tab):ClearHighlightedLines()
-        end
-
         local textEditor = CPULib.SelectTab(ZCPU_Editor,currentPosition.File)
         if textEditor then
           textEditor:HighlightLine(currentPosition.Line,130,0,0,255)
@@ -406,14 +496,32 @@ if CLIENT then
     CPULib.Debugger.Variables.EDI  = um:ReadFloat()
     CPULib.Debugger.Variables.EBP  = um:ReadFloat()
     CPULib.Debugger.Variables.ESP  = um:ReadFloat()
+	
+    CPULib.Debugger.Variables.CS  = um:ReadFloat()
+    CPULib.Debugger.Variables.SS  = um:ReadFloat()
+    CPULib.Debugger.Variables.DS  = um:ReadFloat()
+    CPULib.Debugger.Variables.ES  = um:ReadFloat()
+    CPULib.Debugger.Variables.GS  = um:ReadFloat()
+    CPULib.Debugger.Variables.FS  = um:ReadFloat()
+    CPULib.Debugger.Variables.KS  = um:ReadFloat()
+    CPULib.Debugger.Variables.LS  = um:ReadFloat()
 
     for reg=0,31 do
       CPULib.Debugger.Variables["R"..reg]  = um:ReadFloat()
     end
-
+	
     CPULib.DebugUpdateHighlights()
   end
   usermessage.Hook("cpulib_debugdata_registers", CPULib.OnDebugData_Registers)
+
+  function CPULib.OnDebugData_Stack(um)
+	local i
+	local count = um:ReadLong()
+	for i = 1,count do
+	  CPULib.Debugger.Stack[i] = um:ReadFloat()
+	end
+  end
+  usermessage.Hook("cpulib_debugdata_stack", CPULib.OnDebugData_Stack)  
 
   function CPULib.OnDebugData_Variables(um)
     local startIndex = um:ReadShort()
@@ -622,11 +730,35 @@ if SERVER then
         umsg.Float(VM.EDI)
         umsg.Float(VM.EBP)
         umsg.Float(VM.ESP)
+		
+        umsg.Float(VM.CS)
+        umsg.Float(VM.SS)
+        umsg.Float(VM.DS)
+        umsg.Float(VM.ES)
+        umsg.Float(VM.GS)
+        umsg.Float(VM.FS)
+        umsg.Float(VM.KS)
+        umsg.Float(VM.LS)
 
         for reg = 0,31 do
           umsg.Float(VM["R"..reg])
         end
       umsg.End()
+	  
+	  umsg.Start("cpulib_debugdata_stack", umsgrp)
+	  local i
+	  local ramSize = VM.RAMSize
+	  local count = 20
+	  umsg.Long(count)
+	  for i = 1,count do
+		local stackAddr = VM.SS + VM.ESP + i
+		local val = 0
+		if stackAddr >= 0 and stackAddr < ramSize then
+			val = VM:ReadCell(stackAddr)
+		end
+		umsg.Float(val)
+	  end
+	  umsg.End()
     end
 
     if MemPointers then
@@ -650,8 +782,25 @@ if SERVER then
     if not IsValid(Data.Entity) then return end
 
     if not args[1] then -- Step forward
-      Data.Entity.VM:Step(1)
+	
+	  -- Doesn't work, skips like 9 instructions at a time.
+      --[[ Data.Entity.VM:Step(1)
       Data.Entity.VMStopped = true
+	  Data.Entity:NextThink(CurTime()) ]]
+	  
+	  -- Same as below, not sure what LastInstruction means, but setting it to 0 makes it step one instruction.
+      Data.Entity.VMStopped = false
+      Data.Entity:NextThink(CurTime())
+
+      Data.Entity.LastInstruction = 0
+      Data.Entity.OnLastInstruction = function()
+        Data.Entity.LastInstruction = nil
+        Data.Entity.OnLastInstruction = nil
+        CPULib.SendDebugData(Data.Entity.VM,Data.MemPointers,Data.Player)
+      end
+	  
+	  
+	  
     else -- Run until instruction
       Data.Entity.VMStopped = false
       Data.Entity:NextThink(CurTime())
@@ -678,6 +827,7 @@ if SERVER then
     CPULib.SendDebugData(Data.Entity.VM,nil,Data.Player)
     Data.Entity.VM.IP = tempIP
 
+	Data.Entity.VMStopped = false
     Data.Entity.Clk = true
     Data.Entity:NextThink(CurTime())
   end)
@@ -689,6 +839,8 @@ if SERVER then
     if not IsValid(Data.Entity) then return end
 
     Data.Entity.VM:Reset()
+	Data.Entity.VMStopped = true
+	Data.Entity.Clk = false
     CPULib.SendDebugData(Data.Entity.VM,Data.MemPointers,Data.Player)
   end)
 
@@ -826,6 +978,7 @@ end
 -- INT: 48-bit signed integer
 
 CPULib.InstructionTable = {}
+CPULib.MnemonicToInstructionTable = {}
 local W1,R0,OB,UB,CB,TR,OL,BL = 1,2,4,8,16,32,64,128
 
 local function Bit(x,n) return (math.floor(x / n) % 2) == 1 end
@@ -849,6 +1002,7 @@ local function Entry(Set,Opc,Mnemonic,Ops,Version,Flags,Op1,Op2,Reference)
       Old = Bit(Flags,OL),
       BlockPrefix = Bit(Flags,BL),
     })
+  CPULib.MnemonicToInstructionTable[Mnemonic] = #CPULib.InstructionTable
 end
 local function CPU(...) Entry("CPU",...) end
 local function GPU(...) Entry("GPU",...) end

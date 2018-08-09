@@ -148,6 +148,8 @@ function HCOMP:ParsePreprocessMacro(lineText,macroPosition)
           fileName = searchPath.."\\"..fullFileName
         end
       end
+	else
+	  fileName = "cpuchip/"..fullFileName
     end
 
     -- Push this file on top of the stack

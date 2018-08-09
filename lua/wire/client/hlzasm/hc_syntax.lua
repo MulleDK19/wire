@@ -341,7 +341,21 @@ function HCOMP:BlockEnd()
 
     -- Add local labels to lookup list
     for labelName,labelData in pairs(self.LocalLabels) do
-      self.DebugInfo.Labels["local."..labelName] = { StackOffset = labelData.StackOffset }
+		local localsTable = self.DebugInfo.Labels["locals"]
+		if not localsTable then
+			localsTable = {}
+			self.DebugInfo.Labels["locals"] = localsTable
+		end
+		
+		local functionName = string.upper(self.CurrentParentLabel.Name)
+		local functionLocalsTable = localsTable[functionName]
+		if not functionLocalsTable then
+			functionLocalsTable = {}
+			localsTable[functionName] = functionLocalsTable
+		end
+		
+		functionLocalsTable[labelName] = { StackOffset = labelData.StackOffset }
+      ----self.DebugInfo.Labels["local."..string.upper(self.CurrentParentLabel.Name).."."..labelName] = { StackOffset = labelData.StackOffset }
     end
 
     self.LocalLabels = nil
