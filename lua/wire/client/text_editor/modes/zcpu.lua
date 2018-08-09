@@ -286,6 +286,18 @@ function EDITOR:PopulateMenu(menu)
     menu:AddOption( "Add Breakpoint", function()
       CPULib.SetDebugBreakpoint( self.chosenfile, caretPos, true )
     end)
+    menu:AddOption( "Run Till", function()
+		local fileName = self.chosenfile
+		if not fileName or not caretPos then return nil end
+
+		local linePointers = CPULib.Debugger.PointersByLine[caretPos[1]..":"..fileName]
+		if linePointers then -- Run till end of line
+			RunConsoleCommand("wire_cpulib_debugruntill", CPULib.Debugger.PointersByLine[caretPos[1]..":"..fileName][1])
+		end
+
+		-- Reset interrupt text
+		CPULib.InterruptText = nil
+    end)
     --				menu:AddOption( "Add Conditional Breakpoint", function()
     --					Derma_StringRequestNoBlur( "Add Conditional Breakpoint", "456", "123",
     --					function( strTextOut )

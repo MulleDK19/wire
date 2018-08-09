@@ -269,7 +269,6 @@ if CLIENT then
 				if functionLocalsTable then
 					local localTable = functionLocalsTable[csvar]
 					if localTable then
-						print(labelName .. " has local variable " .. var)
 						finalLocalTable = localTable
 						finalLocalTableFunctionName = labelName
 					end
@@ -367,8 +366,12 @@ if CLIENT then
     end
 	
 	if wire_cpu_show_all_registers:GetFloat() == 1 then
+		table.insert(result,"")
+		local i = 0
 		for stackOffset, stack in pairs(CPULib.Debugger.Stack) do
 			table.insert(result, "[ESP+"..stackOffset.."] = " .. stack)
+			i = i + 1
+			if i >= 30 then break end
 		end
 	end
 
@@ -514,14 +517,13 @@ if CLIENT then
   end
   usermessage.Hook("cpulib_debugdata_registers", CPULib.OnDebugData_Registers)
 
-  function CPULib.OnDebugData_Stack(um)
+  net.Receive("CPULib.DebugData.Stack", function(len, ply)
 	local i
-	local count = um:ReadLong()
+	local count = net.ReadUInt(16)
 	for i = 1,count do
-	  CPULib.Debugger.Stack[i] = um:ReadFloat()
+	  CPULib.Debugger.Stack[i] = net.ReadFloat()
 	end
-  end
-  usermessage.Hook("cpulib_debugdata_stack", CPULib.OnDebugData_Stack)  
+  end)
 
   function CPULib.OnDebugData_Variables(um)
     local startIndex = um:ReadShort()
@@ -568,6 +570,7 @@ end
 
 if SERVER then
   util.AddNetworkString("CPULib.ServerUploading")
+  util.AddNetworkString("CPULib.DebugData.Stack")
   ------------------------------------------------------------------------------
   -- Data received from server
   CPULib.DataBuffer = {}
@@ -644,8 +647,13 @@ if SERVER then
   function CPULib.AttachDebugger(entity,player)
     if entity then
       entity.BreakpointInstructions = {}
-      entity.OnBreakpointInstruction = function(IP)
+	  entity.RunTillBreakpointInstruction = -1
+      entity.OnBreakpointInstruction = function(XEIP)
         CPULib.SendDebugData(entity.VM,CPULib.DebuggerData[player:UserID()].MemPointers,player)
+		if entity.RunTillBreakpointInstruction > -1 then
+			entity.BreakpointInstructions[entity.RunTillBreakpointInstruction] = nil
+			entity.RunTillBreakpointInstruction = -1
+		end
       end
       entity.OnVMStep = function()
         if CurTime() - CPULib.DebuggerData[player:UserID()].PreviousUpdateTime > 0.2 then
@@ -744,21 +752,21 @@ if SERVER then
           umsg.Float(VM["R"..reg])
         end
       umsg.End()
-	  
-	  umsg.Start("cpulib_debugdata_stack", umsgrp)
+
+	  net.Start("CPULib.DebugData.Stack")
 	  local i
 	  local ramSize = VM.RAMSize
-	  local count = 20
-	  umsg.Long(count)
+	  local count = 1000
+	  net.WriteUInt(count, 16)
 	  for i = 1,count do
 		local stackAddr = VM.SS + VM.ESP + i
 		local val = 0
 		if stackAddr >= 0 and stackAddr < ramSize then
 			val = VM:ReadCell(stackAddr)
 		end
-		umsg.Float(val)
+		net.WriteFloat(val)
 	  end
-	  umsg.End()
+	  net.Send(Player)
     end
 
     if MemPointers then
@@ -838,9 +846,9 @@ if SERVER then
     if (not Data) or (Data.Player ~= player) then return end
     if not IsValid(Data.Entity) then return end
 
+	Data.Entity.Clk = false
     Data.Entity.VM:Reset()
 	Data.Entity.VMStopped = true
-	Data.Entity.Clk = false
     CPULib.SendDebugData(Data.Entity.VM,Data.MemPointers,Data.Player)
   end)
 
@@ -865,6 +873,48 @@ if SERVER then
     else
       Data.Entity.BreakpointInstructions[tonumber(args[1]) or 0] = true
     end
+  end)
+  
+  -- Concommand to run till line
+  concommand.Add("wire_cpulib_debugruntill", function(player, command, args)
+    local Data = CPULib.DebuggerData[player:UserID()]
+    if (not Data) or (Data.Player ~= player) then return end
+    if not IsValid(Data.Entity) then return end
+	if not args[1] then return end
+
+	local ptr = tonumber(args[1])
+    Data.Entity.BreakpointInstructions[ptr] = true
+	Data.Entity.RunTillBreakpointInstruction = ptr
+	
+	-- TODO: Refactor into a function (Used for Run command as well)?
+    -- Send a fake update that messes up line pointer
+    local tempIP = Data.Entity.VM.IP
+    Data.Entity.VM.IP = INVALID_BREAKPOINT_IP
+    CPULib.SendDebugData(Data.Entity.VM,nil,Data.Player)
+    Data.Entity.VM.IP = tempIP
+
+	Data.Entity.VMStopped = false
+    Data.Entity.Clk = true
+    Data.Entity:NextThink(CurTime())
+  end)
+else
+  -- CLIENT
+  -- Concommand to step forward
+  concommand.Add("wire_cpulib_debugstep2", function(player, command, args)
+	local xeip = CPULib.Debugger.Variables.CS+CPULib.Debugger.Variables.IP
+	local currentPosition = CPULib.Debugger.PositionByPointer[xeip]
+	if currentPosition then
+		local linePointers = CPULib.Debugger.PointersByLine[currentPosition.Line .. ":" .. currentPosition.File]
+		if linePointers then -- Run till end of line
+			RunConsoleCommand("wire_cpulib_debugstep", linePointers[2])
+		else -- Run just once
+			RunConsoleCommand("wire_cpulib_debugstep")
+		end
+	else -- Run just once
+		RunConsoleCommand("wire_cpulib_debugstep")
+	end
+	-- Reset interrupt text
+	CPULib.InterruptText = nil
   end)
 end
 
