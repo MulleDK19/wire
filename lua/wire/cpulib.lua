@@ -321,6 +321,8 @@ if CLIENT then
   -- Get debug text for specific variable/function name
   CPULib.InterruptText = nil
   function CPULib.GetDebugWindowText()
+	local timerValue = CPULib.Debugger.Variables.TIMER or 0
+	timerValue = math.Round(timerValue * 100000000) / 100000000
     local result = {
       "EAX = "..(CPULib.Debugger.Variables.EAX or "#####"),
       "EBX = "..(CPULib.Debugger.Variables.EBX or "#####"),
@@ -366,6 +368,12 @@ if CLIENT then
     end
 	
 	if wire_cpu_show_all_registers:GetFloat() == 1 then
+		table.insert(result,"")
+		
+		table.insert(result,"TIMER = "..(timerValue or "#####"))
+		table.insert(result,"TMR = "..(CPULib.Debugger.Variables.TMR or "#####"))
+		table.insert(result,"CMPR = "..(CPULib.Debugger.Variables.CMPR or "#####"))
+		
 		table.insert(result,"")
 		local i = 0
 		for stackOffset, stack in pairs(CPULib.Debugger.Stack) do
@@ -499,6 +507,10 @@ if CLIENT then
     CPULib.Debugger.Variables.EDI  = um:ReadFloat()
     CPULib.Debugger.Variables.EBP  = um:ReadFloat()
     CPULib.Debugger.Variables.ESP  = um:ReadFloat()
+    
+	CPULib.Debugger.Variables.TIMER = um:ReadFloat()
+	CPULib.Debugger.Variables.TMR = um:ReadFloat()
+	CPULib.Debugger.Variables.CMPR = um:ReadFloat()
 	
     CPULib.Debugger.Variables.CS  = um:ReadFloat()
     CPULib.Debugger.Variables.SS  = um:ReadFloat()
@@ -739,6 +751,10 @@ if SERVER then
         umsg.Float(VM.EBP)
         umsg.Float(VM.ESP)
 		
+        umsg.Float(VM.TIMER)
+        umsg.Float(VM.TMR)
+        umsg.Float(VM.CMPR)
+		
         umsg.Float(VM.CS)
         umsg.Float(VM.SS)
         umsg.Float(VM.DS)
@@ -797,6 +813,7 @@ if SERVER then
 	  Data.Entity:NextThink(CurTime()) ]]
 	  
 	  -- Same as below, not sure what LastInstruction means, but setting it to 0 makes it step one instruction.
+	  -- TODO: fix-me: This increases TMR by like a hundred thousand per step.
       Data.Entity.VMStopped = false
       Data.Entity:NextThink(CurTime())
 
