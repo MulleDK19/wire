@@ -160,7 +160,33 @@ if CLIENT then
           CPULib.Debugger.Labels = HCOMP.DebugInfo.Labels
           CPULib.Debugger.PositionByPointer = HCOMP.DebugInfo.PositionByPointer
           CPULib.Debugger.PointersByLine = HCOMP.DebugInfo.PointersByLine
-
+		  
+		  -- Calculate the size of local variables.
+		  if CPULib.Debugger and CPULib.Debugger.Labels and CPULib.Debugger.Labels["locals"] then
+			  for functionName, functionTable in pairs(CPULib.Debugger.Labels["locals"]) do
+				local labelOrder = {}
+				for label, labelTable in pairs(functionTable) do
+					table.insert(labelOrder, label)
+				end
+				table.sort(labelOrder, function(a, b)
+					return (functionTable[a].StackOffset or 0) > (functionTable[b].StackOffset or 0)
+				end)
+				local previousStackOffset = 0
+				for i, labelName in pairs(labelOrder) do
+					local stackOffset = functionTable[labelName].StackOffset or 0
+					local size
+					if stackOffset >= 0 then
+						size = 1 -- Assume parameters are always size 1.
+					else
+						size = previousStackOffset - stackOffset
+						previousStackOffset = stackOffset
+					end
+					
+					functionTable[labelName].Size = size
+				end
+			  end
+		  end
+			  
           CPULib.SuccessCallback()
         end
         timer.Remove("cpulib_compile")
@@ -230,6 +256,304 @@ if CLIENT then
 
   ------------------------------------------------------------------------------
   -- Get debug text for specific variable/function name
+function CPULib.DrawDebugPopupBox(panel, var, pos)
+	local csvar = string.upper(var)
+	local popupX, popupY = pos[1], pos[2]
+	local borderSize = 10
+	
+	local function getTextSize(font, text)
+		surface.SetFont(font)
+		local w, h = surface.GetTextSize(text)
+		return w, h
+	end
+	
+	local popupHeader = nil
+	local popupFields = {}
+	local function setHeader(text)
+		popupHeader = text
+	end
+	
+	local function addField(name, value, nameColor, valueColor)
+		local field = {}
+		field.Name = name
+		field.Value = value
+		field.NameColor = nameColor or Color(255, 200, 25, 255)
+		field.ValueColor = valueColor or Color(255, 255, 255, 255)
+		table.insert(popupFields, field)
+	end
+	
+	local function drawPopup()
+		local headerFont = "GModNotify"
+		local fieldFont = "ChatFont"
+		borderColor = textColor or Color(255, 255, 255, 255)
+		surface.SetFont(headerFont)
+		local _, headerHeight = surface.GetTextSize(popupHeader)
+		
+		local fieldsWidth = 0
+		local fieldsHeight = 0
+		
+		local x, y = 0, 0
+		for _, field in pairs(popupFields) do
+			local name = field.Name
+			local value = field.Value
+			field.NameOffsetX = x
+			field.NameOffsetY = y
+			field.ValueOffsetX = x + 160
+			field.ValueOffsetY = y
+			surface.SetFont(fieldFont)
+			local valueWidth, valueHeight = surface.GetTextSize(value)
+			if x + 160 + valueWidth > fieldsWidth then
+				fieldsWidth = x + 160 + valueWidth
+			end
+			y = y + valueHeight
+			fieldsHeight = fieldsHeight + valueHeight
+		end
+		
+		local borderWidth = borderSize+fieldsWidth+12
+		local borderHeight = borderSize+fieldsHeight + 25
+		popupY = popupY - borderHeight - 16
+		if popupY < 0 then
+			popupY = 0
+		end
+		--popupX = panel:GetWide() - borderWidth
+		--popupY = panel:GetTall() - borderHeight
+		draw.RoundedBox(borderSize, popupX, popupY, borderWidth, borderHeight, Color(0,0,25,245))
+		draw.DrawText(popupHeader, headerFont, popupX + 4 + borderSize/2 + x, popupY + borderSize/2, Color(25, 200, 255, 255), TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+		for _, field in pairs(popupFields) do
+			draw.DrawText(field.Name, fieldFont, popupX + 12+field.NameOffsetX, 25+popupY + field.NameOffsetY, field.NameColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+			draw.DrawText(field.Value, fieldFont, popupX + 12+field.ValueOffsetX, 25+popupY + field.ValueOffsetY, field.ValueColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+		end
+	end
+	
+	local nameFieldColor = Color(50, 255, 100, 255)
+	local valueFieldColor = Color(150, 255, 150, 255)
+	
+	if CPULib.Debugger.Labels["locals"] then
+		-- Find a local variable with this name.
+		local localsTable = CPULib.Debugger.Labels["locals"]
+		local xeip = (CPULib.Debugger.Variables.IP or 0) + (CPULib.Debugger.Variables.CS or 0)
+		local finalLocalTable = nil
+		for labelName, labelTable in pairs(CPULib.Debugger.Labels) do
+			if labelName == "locals" then continue end
+			local labelPointer = labelTable.Pointer or -10000
+			if xeip >= labelPointer then
+				local functionLocalsTable = localsTable[labelName]
+				if functionLocalsTable then
+					local localTable = functionLocalsTable[csvar]
+					if localTable then
+						finalLocalTable = localTable
+						finalLocalTableFunctionName = labelName
+					end
+				end
+			end
+		end
+
+		if finalLocalTable then
+			if finalLocalTable["Type"] == "Stack" then
+				if finalLocalTable["StackOffset"] then
+					local stackOffset = finalLocalTable.StackOffset
+					local size = finalLocalTable.Size or 1
+					local ebpEsp = CPULib.Debugger.Variables.EBP - CPULib.Debugger.Variables.ESP
+					
+					if stackOffset >= 0 then
+						setHeader("PARAMETER VARIABLE")
+					else
+						setHeader("LOCAL VARIABLE")
+					end
+					addField("Name", finalLocalTable.Name, nil, nameFieldColor)
+
+					local stackAddress = CPULib.Debugger.Variables.EBP + CPULib.Debugger.Variables.SS + stackOffset
+
+					local finalString
+					if stackOffset >= 0 then
+						finalString = "PARAMETER VARIABLE\n"
+					else
+						finalString = "LOCAL VARIABLE\n"
+					end
+					
+					if stackOffset >= 0 then
+						addField("Stack offset", "EBP+"..stackOffset)
+					else
+						addField("Stack offset", "EBP-"..math.abs(stackOffset))
+					end
+					if size ~= 1 then
+						addField("Size", tostring(size))
+					end
+					
+					addField("Address", tostring(stackAddress))
+					
+					local isPossiblyString = false
+					if size == 1 then
+						local stackValue = CPULib.Debugger.Stack[math.abs(ebpEsp+stackOffset)] or 0
+						local characterValue = nil
+						if stackValue >= 32 and stackValue <= 126 then
+							characterValue = string.char(stackValue)
+							isPossiblyString = true
+						end
+						addField("Float value", tostring(stackValue), nil, valueFieldColor)
+						if characterValue and size == 1 then
+							addField("Character value", "'" .. characterValue .. "'")
+						end
+					else
+						local floatValuesString = nil
+						local characterValuesString = nil
+						for i = 0, size-1 do
+							local stackValue = CPULib.Debugger.Stack[math.abs(ebpEsp+stackOffset+i)] or 0
+							local characterValue = nil
+							if stackValue >= 32 and stackValue <= 126 then
+								characterValue = string.char(stackValue)
+								isPossiblyString = true
+							else
+								characterValue = "0"
+							end
+							if not floatValuesString then
+								floatValuesString = tostring(stackValue)
+							else
+								floatValuesString = floatValuesString .. ", " .. tostring(stackValue)
+							end
+							if isPossiblyString then
+								if not characterValuesString then
+									characterValuesString = "'" .. characterValue .. "'"
+								else
+									characterValuesString = characterValuesString .. ", '" .. characterValue .. "'"
+								end
+							end
+						end
+						
+						if floatValuesString then
+							addField("Float values", floatValuesString, nil, valueFieldColor)
+						end
+						if characterValuesString then
+							addField("Character values", characterValuesString)
+						end
+						
+						if isPossiblyString then
+							stringValue = ""
+							for i = 0, size - 1 do
+								local stackValue = CPULib.Debugger.Stack[math.abs(ebpEsp+stackOffset+i)] or 0
+								if stackValue == 0 then break end
+								local character
+								if stackValue >= 32 and stackValue <= 126 then
+									character = string.char(stackValue)
+								else
+									character = "?"
+								end
+								
+								stringValue = stringValue .. tostring(character)
+							end
+							addField("String value", "\"" .. stringValue .. "\"")
+						end
+					end
+					
+					drawPopup()
+					return true
+				end
+			elseif finalLocalTable["Type"] == "Register" then
+				local register = finalLocalTable.Register or 0
+				local registerName = ""
+				if register == 1 then registerName = "EAX"
+				elseif register == 2 then registerName = "EBX"
+				elseif register == 3 then registerName = "ECX"
+				elseif register == 4 then registerName = "EDX"
+				elseif register == 5 then registerName = "ESI"
+				elseif register == 6 then registerName = "EDI"
+				elseif register == 7 then registerName = "IP" end
+				local registerValue = CPULib.Debugger.Variables[registerName] or 0
+				
+				setHeader("REGISTER VARIABLE")
+				addField("Name", finalLocalTable.Name, nil, nameFieldColor)
+				addField("Register", registerName)
+				
+				local characterValue = nil
+				if registerValue >= 32 and registerValue <= 126 then
+					characterValue = string.char(registerValue)
+				end
+				addField("Float value", tostring(registerValue), nil, valueFieldColor)
+				if characterValue then
+					addField("Character value", "'" .. characterValue .. "'")
+				end
+				drawPopup()
+				
+				return true
+			end
+		end
+	end
+	
+	if CPULib.Debugger.Variables[csvar] then
+		if not CPULib.Debugger.MemoryVariableByName[csvar] then
+			setHeader("REGISTER")
+			addField("Name", csvar, nil, nameFieldColor)
+			addField("Value", CPULib.Debugger.Variables[csvar], nil, valueFieldColor)
+		else
+			setHeader("VARIABLE")
+			addField("Name", var, nil, nameFieldColor)
+			local ptr = CPULib.Debugger.MemoryVariableByName[csvar]
+			addField("Offset", ptr)
+			addField("Value", CPULib.Debugger.Variables[csvar], nil, valueFieldColor)
+		end
+		drawPopup()
+		return true
+    end
+	
+	if CPULib.Debugger.Labels[csvar] then
+		setHeader("LABEL")
+		addField("Name", var, nil, nameFieldColor)
+		if CPULib.Debugger.Labels[csvar].Offset then
+			if not CPULib.Debugger.MemoryVariableByName[csvar] then
+				CPULib.Debugger.MemoryVariableByName[csvar] = CPULib.Debugger.Labels[csvar].Offset
+				table.insert(CPULib.Debugger.MemoryVariableByIndex,csvar)
+				RunConsoleCommand("wire_cpulib_debugvar",#CPULib.Debugger.MemoryVariableByIndex,CPULib.Debugger.Labels[csvar].Offset)
+			end
+			
+			
+			addField("Value", "...", nil, valueFieldColor)
+		elseif CPULib.Debugger.Labels[csvar].Pointer then
+			local ptr = CPULib.Debugger.Labels[csvar].Pointer
+			addField("Offset", tostring(ptr))
+			addField("Value", "...", nil, valueFieldColor)
+		else
+			addField("Value", "???", nil, valueFieldColor)
+		end
+		
+		drawPopup()
+		return true
+	end
+	
+	-- Lastly, look up instruction info
+	local opcode = CPULib.MnemonicToInstructionTable[csvar]
+	if opcode then
+		local instruction = CPULib.InstructionTable[opcode]
+		if instruction then
+			local set = instruction.Set
+			opcode = instruction.Opcode or 0
+			local mnemonic = instruction.Mnemonic or "ERROR"
+			local reference = instruction.Reference or "NO DESCRIPTION"
+			local op1 = instruction.Operand1
+			local op2 = instruction.Operand2
+			if op1 == "" then op1 = nil end
+			if op2 == "" then op2 = nil end
+			
+			local header = mnemonic
+			if op1 then
+				header = header .. " " .. op1
+			end
+			if op2 then
+				header = header .. ", " .. op2
+			end
+			
+			setHeader(header)
+			addField("Set", set)
+			addField("Opcode", opcode, nil, valueFieldColor)
+			addField("Mnemonic", mnemonic, nil, nameFieldColor)
+			addField("Description", reference, nil, valueFieldColor)
+			drawPopup()
+			return true
+		end
+	end
+	
+	return false
+end
+  
   function CPULib.GetDebugPopupText(var)
     if not var then return "" end
     local csvar = string.upper(var)
@@ -259,7 +583,7 @@ if CLIENT then
 	  elseif CPULib.Debugger.Labels["locals"] then
 		  -- Find a local variable with this name.
 		  local localsTable = CPULib.Debugger.Labels["locals"]
-		  local xeip = (CPULib.Debugger.Variables.CS or 0) + (CPULib.Debugger.Variables.IP or 0)
+		  local xeip = (CPULib.Debugger.Variables.IP or 0) + (CPULib.Debugger.Variables.CS or 0)
 		  local finalLocalTable = nil
 	      for labelName, labelTable in pairs(CPULib.Debugger.Labels) do
 			if labelName == "locals" then continue end
@@ -277,21 +601,76 @@ if CLIENT then
 		  end
 		  
 		  if finalLocalTable then
-			if finalLocalTable["StackOffset"] then
-				local stackOffset = finalLocalTable.StackOffset
-				local ebpEsp = CPULib.Debugger.Variables.EBP - CPULib.Debugger.Variables.ESP
-				local stackAddress = CPULib.Debugger.Variables.SS + CPULib.Debugger.Variables.EBP + stackOffset
-				local stackValue = CPULib.Debugger.Stack[math.abs(ebpEsp+stackOffset)]
-				if stackOffset >= 0 then
-					return "[ebp+"..stackOffset.."] / "..stackAddress..": "..csvar.." = "..(stackValue or "OUT OF SCOPE")
-				else
-					return "[ebp-"..math.abs(stackOffset).."] / "..stackAddress..": "..csvar.." = "..(stackValue or "OUT OF SCOPE")
+			if finalLocalTable["Type"] == "Stack" then
+				if finalLocalTable["StackOffset"] then
+					local stackOffset = finalLocalTable.StackOffset
+					local size = finalLocalTable.Size
+					local ebpEsp = CPULib.Debugger.Variables.EBP - CPULib.Debugger.Variables.ESP
+
+					local stackAddress = CPULib.Debugger.Variables.EBP + CPULib.Debugger.Variables.SS + stackOffset
+
+					local finalString = "STACK VARIABLE\n"
+					if stackOffset >= 0 then
+						finalString = finalString .. "[ebp+"..stackOffset.."] / "..stackAddress..": "..finalLocalTable.Name.." = "
+					else
+						finalString = finalString .. "[ebp-"..math.abs(stackOffset).."] / "..stackAddress..": "..finalLocalTable.Name.." = "
+					end
+					
+					local containsCharacters = false
+					for i = 0,size-1 do
+						local stackValue = CPULib.Debugger.Stack[math.abs(ebpEsp+stackOffset+i)] or 0
+						local finalStackValue
+						if stackValue >= 32 and stackValue <= 126 then
+							finalStackValue = tostring(stackValue) .. " '" .. string.char(stackValue) .. "'"
+							containsCharacters = true
+						else
+							finalStackValue = tostring(stackValue)
+						end
+						
+						if i < size-1 then
+							finalString = finalString .. finalStackValue .. ", "
+						else
+							finalString = finalString .. finalStackValue
+						end
+					end
+					
+					if containsCharacters then
+						finalString = finalString .. " \""
+						for i = 0,size-1 do
+							local stackValue = CPULib.Debugger.Stack[math.abs(ebpEsp+stackOffset+i)]
+							if stackValue == 0 then
+								break
+							else
+								if stackValue >= 32 and stackValue <= 126 then
+									finalString = finalString .. string.char(stackValue)
+								else
+									finalString = finalString .. "?"
+								end
+							end
+						end
+						
+						finalString = finalString .. "\""
+					end
+					
+					return finalString
 				end
+			elseif finalLocalTable["Type"] == "Register" then
+				local register = finalLocalTable.Register or 0
+				local registerName = ""
+				if register == 1 then registerName = "EAX"
+				elseif register == 2 then registerName = "EBX"
+				elseif register == 3 then registerName = "ECX"
+				elseif register == 4 then registerName = "EDX"
+				elseif register == 5 then registerName = "ESI"
+				elseif register == 6 then registerName = "EDI"
+				elseif register == 7 then registerName = "IP" end
+				local registerValue = CPULib.Debugger.Variables[registerName] or 0
+				return "REGISTER VARIABLE\n" .. registerName .. ": " .. finalLocalTable.Name .. " = " .. registerValue
 			end
 		  end
 	  end
 		-- Lastly, look up instruction info
-		local opcode = CPULib.MnemonicToInstructionTable[string.upper(csvar)]
+		local opcode = CPULib.MnemonicToInstructionTable[csvar]
 		if opcode then
 			local instruction = CPULib.InstructionTable[opcode]
 			if instruction then
@@ -377,7 +756,17 @@ if CLIENT then
 		table.insert(result,"")
 		local i = 0
 		for stackOffset, stack in pairs(CPULib.Debugger.Stack) do
-			table.insert(result, "[ESP+"..stackOffset.."] = " .. stack)
+			local stackString
+			if stack >= 32 and stack <= 126 then
+				stackString = tostring(stack) .. " '" .. string.char(stack) .. "'"
+			else
+				stackString = tostring(stack)
+			end
+			if CPULib.Debugger.Variables.SS == 0 then
+				table.insert(result, "[ESP+"..stackOffset.."] = " .. stackString)
+			else
+				table.insert(result, "[ESP+SS+"..stackOffset.."] = " .. stackString)
+			end
 			i = i + 1
 			if i >= 30 then break end
 		end
@@ -770,7 +1159,7 @@ if SERVER then
 	  local count = 1000
 	  net.WriteUInt(count, 16)
 	  for i = 1,count do
-		local stackAddr = VM.SS + VM.ESP + i
+		local stackAddr = VM.ESP + VM.SS + i
 		local val = 0
 		if stackAddr >= 0 and stackAddr < ramSize then
 			val = VM:ReadCell(stackAddr)
@@ -913,7 +1302,7 @@ else
   -- CLIENT
   -- Concommand to step forward
   concommand.Add("wire_cpulib_debugstep2", function(player, command, args)
-	local xeip = CPULib.Debugger.Variables.CS+CPULib.Debugger.Variables.IP
+	local xeip = (CPULib.Debugger.Variables.CS or 0) + (CPULib.Debugger.Variables.IP or 0)
 	local currentPosition = CPULib.Debugger.PositionByPointer[xeip]
 	if currentPosition then
 		local linePointers = CPULib.Debugger.PointersByLine[currentPosition.Line .. ":" .. currentPosition.File]

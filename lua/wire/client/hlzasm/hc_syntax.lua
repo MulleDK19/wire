@@ -354,7 +354,13 @@ function HCOMP:BlockEnd()
 			localsTable[functionName] = functionLocalsTable
 		end
 		
-		functionLocalsTable[labelName] = { StackOffset = labelData.StackOffset }
+		functionLocalsTable[labelName] =
+		{
+			Type = labelData.Type,
+			Name = labelData.Name,
+			StackOffset = labelData.StackOffset,
+			Register = labelData.Value
+		}
       ----self.DebugInfo.Labels["local."..string.upper(self.CurrentParentLabel.Name).."."..labelName] = { StackOffset = labelData.StackOffset }
     end
 

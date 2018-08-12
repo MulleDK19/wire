@@ -1,13 +1,27 @@
 local math_floor = math.floor
 local string_gmatch = string.gmatch
 local string_gsub = string.gsub
-local draw_WordBox = draw.WordBox
+local draw_WordBox = function(borderSize, x, y, text, font, boxcolor, textcolor)
+	local w = 256
+	local h = 128
+	surface.SetFont(font)
+	local textW, textH = surface.GetTextSize(text)
+	local textX = x + borderSize
+	local textY = y + borderSize
+	w = borderSize * 2 + textW
+	h = borderSize * 2 + textH
+	
+	draw.RoundedBox(borderSize, x, y, w, h, boxcolor)
+	draw.DrawText(text, font, textX, textY, textcolor, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+end--draw.WordBox
 
 local EDITOR = {}
 
 -- CPU hint box
 local oldpos, haschecked = {0,0}, false
-function EDITOR:Think()
+
+function THINKME2(self)
+  local cursorX, cursorY = self:CursorPos()
   local caret = self:CursorToCaret()
   local startpos, word = self:getWordStart( caret, true )
 
@@ -21,7 +35,7 @@ function EDITOR:Think()
         local caret = self:CursorToCaret()
         local startpos, word = self:getWordStart( caret, true )
         if startpos[1] == oldpos[1] and startpos[2] == oldpos[2] then
-          self.CurrentVarValue = { startpos, word }
+          self.CurrentVarValue = { startpos, word, {cursorX, cursorY} }
         end
       end)
     elseif (oldpos[1] ~= startpos[1] or oldpos[2] ~= startpos[2]) and haschecked then
@@ -34,6 +48,10 @@ function EDITOR:Think()
     haschecked = false
     oldpos = {0,0}
   end
+end
+
+function EDITOR:Think()
+THINKME2(self)
 end
 
 local colors = {
@@ -312,27 +330,39 @@ function EDITOR:PopulateMenu(menu)
 end
 
 function EDITOR:Paint()
-  -- Paint CPU debug hints
-  if self.CurrentVarValue then
-    local pos = self.CurrentVarValue[1]
-    local x, y = (pos[2]+2) * self.FontWidth, (pos[1]-1-self.Scroll[1]) * self.FontHeight
-    local txt = CPULib.GetDebugPopupText(self.CurrentVarValue[2])
-    if txt then
-      draw_WordBox(2, x, y, txt, "E2SmallFont", Color(0,0,0,255), Color(255,255,255,255) )
-    end
-  end
+	-- Paint CPU debug hints
+	if self.CurrentVarValue then
+		local pos = self.CurrentVarValue[3]
+		local drew = CPULib.DrawDebugPopupBox(self, self.CurrentVarValue[2], pos)
 
-  if CPULib.DebuggerAttached then
-    local debugWindowText = CPULib.GetDebugWindowText()
-	local perColumn = 33
-    for k,v in ipairs(debugWindowText) do
-      if v ~= "" then
-        local y = (k % perColumn)
-        local x = 15*(1 + math_floor(#debugWindowText / perColumn) - math_floor(k / perColumn))
-        draw_WordBox(2, self:GetWide()-self.FontWidth*x, self.FontHeight*(-1+y), v, "E2SmallFont", Color(0,0,0,255), Color(255,255,255,255) )
-      end
-    end
-  end
+		if not drew then
+			--local pos = self.CurrentVarValue[1]
+			--local x, y = (pos[2]+2) * self.FontWidth, (pos[1]-1-self.Scroll[1]) * self.FontHeight
+			local x, y = pos[1], pos[2]
+			local txt = CPULib.GetDebugPopupText(self.CurrentVarValue[2])
+			if txt then
+				draw_WordBox(4, x, y, txt, "E2SmallFont", Color(0,0,0,255), Color(255,255,255,255) )
+			end
+		end
+	end
+
+	if CPULib.DebuggerAttached then
+		local debugWindowText = CPULib.GetDebugWindowText()
+		local columnWidth = 100
+		local perColumn = 35
+		local columns = math.floor(#debugWindowText / perColumn) + 1
+		local viewX = self:GetWide() - (columnWidth * columns + 16)
+		local viewY = 16
+		for i, line in ipairs(debugWindowText) do
+			i = i - 1
+			if line ~= "" then
+				local columnIndex = math.floor(i / perColumn)
+				local x = columnWidth * columnIndex
+				local y = self.FontHeight * (i % perColumn)
+				draw_WordBox(2, viewX+x, viewY+y, line, "E2SmallFont", Color(0,0,0,255), Color(255,255,255,255))
+			end
+		end
+	end
 end
 
 WireTextEditor.Modes.ZCPU = EDITOR
