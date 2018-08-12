@@ -134,7 +134,7 @@ function HCOMP:Expression_FunctionCall(label) local TOKEN = self.TOKEN
     local stackCleanupLeaf = self:NewLeaf()
     stackCleanupLeaf.Opcode = "add"
     stackCleanupLeaf.ExplictAssign = true
-    stackCleanupLeaf.Operands[1] = { Register = 7 }
+    stackCleanupLeaf.Operands[1] = { Register = 7 } // ESP
     stackCleanupLeaf.Operands[2] = { Constant = argumentCount }
     table.insert(genLeaves,stackCleanupLeaf)
   end
@@ -242,7 +242,7 @@ function HCOMP:Expression_Level3() local TOKEN = self.TOKEN
         if label.Type == "Stack" then
           operationLeaf = self:NewLeaf()
           operationLeaf.Opcode = "add"
-          operationLeaf.Operands[1] = { Register = 7, Segment = 2 } -- EBP:SS
+          operationLeaf.Operands[1] = { Register = 8, Segment = 2 } -- EBP:SS
           operationLeaf.Operands[2] = addressLeaf
         else
           operationLeaf = addressLeaf
@@ -267,7 +267,7 @@ function HCOMP:Expression_Level3() local TOKEN = self.TOKEN
             -- Create leaf that returns pointer to stack
             operationLeaf = self:NewLeaf()
             operationLeaf.Opcode = "add"
-            operationLeaf.Operands[1] = { Register = 7, Segment = 2 } -- EBP:SS
+            operationLeaf.Operands[1] = { Register = 8, Segment = 2 } -- EBP:SS
             operationLeaf.Operands[2] = addressLeaf
           else -- Pointer to a stack variable
             -- FIXME: check if var is an array
@@ -275,7 +275,7 @@ function HCOMP:Expression_Level3() local TOKEN = self.TOKEN
             -- Create leaf that returns pointer to stack
             operationLeaf = self:NewLeaf()
             operationLeaf.Opcode = "add"
-            operationLeaf.Operands[1] = { Register = 7, Segment = 2 } -- EBP:SS
+            operationLeaf.Operands[1] = { Register = 8, Segment = 2 } -- EBP:SS
             operationLeaf.Operands[2] = { Constant = label.StackOffset }
           end
         else
@@ -381,7 +381,7 @@ function HCOMP:Expression_Level3() local TOKEN = self.TOKEN
           -- Array on stack - return pointer
           operationLeaf = self:NewLeaf()
           operationLeaf.Opcode = "add"
-          operationLeaf.Operands[1] = { Register = 7, Segment = 2 } -- EBP:SS
+          operationLeaf.Operands[1] = { Register = 8, Segment = 2 } -- EBP:SS
           operationLeaf.Operands[2] = { Constant = label.StackOffset }
         else
           -- Stack variable
