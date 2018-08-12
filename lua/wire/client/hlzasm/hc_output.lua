@@ -545,7 +545,7 @@ function HCOMP:OperandRM(operand,block)
       if (operand.Register >= 1024) and (operand.Register < 2048) then return operand.Register-1024+1000 end
       if (operand.Register >=  96)  and (operand.Register <= 127) then return operand.Register-96+2048 end
     else
-      if (operand.Register >=  1) and (operand.Register <=  8) then return operand.Register+26 end
+      if (operand.Register >=  1) and (operand.Register <=  8) then return operand.Register+25 end
       if (operand.Register >= 16) and (operand.Register <= 23) then
         self:Error("Invalid instruction operand (cannot use segment prefix for segment register access)",block)
       end
