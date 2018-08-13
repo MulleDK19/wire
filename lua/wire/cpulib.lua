@@ -333,17 +333,27 @@ function CPULib.DrawDebugPopupBox(panel, var, pos)
 		local localsTable = CPULib.Debugger.Labels["locals"]
 		local xeip = (CPULib.Debugger.Variables.IP or 0) + (CPULib.Debugger.Variables.CS or 0)
 		local finalLocalTable = nil
+		local highestPointer = -999999
+		local functionName = nil
 		for labelName, labelTable in pairs(CPULib.Debugger.Labels) do
 			if labelName == "locals" then continue end
-			local labelPointer = labelTable.Pointer or -10000
-			if xeip >= labelPointer then
-				local functionLocalsTable = localsTable[labelName]
-				if functionLocalsTable then
-					local localTable = functionLocalsTable[csvar]
-					if localTable then
-						finalLocalTable = localTable
-						finalLocalTableFunctionName = labelName
-					end
+			
+			local ptr = labelTable.Pointer or -999999
+			if xeip >= ptr and ptr > highestPointer then
+				highestPointer = ptr
+				functionName = labelName
+			end
+		end
+		
+		if functionName then
+			local functionLocalsTable = localsTable[functionName]
+			if functionLocalsTable then
+				local localTable = functionLocalsTable[csvar]
+				if localTable then
+					functionLabel = labelName
+					smallestPointer = labelPointer
+					finalLocalTable = localTable
+					finalLocalTableFunctionName = labelName
 				end
 			end
 		end
