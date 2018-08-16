@@ -363,7 +363,7 @@ function CPULib.DrawDebugPopupBox(panel, var, pos)
 				if finalLocalTable["StackOffset"] then
 					local stackOffset = finalLocalTable.StackOffset
 					local size = finalLocalTable.Size or 1
-					local ebpEsp = CPULib.Debugger.Variables.EBP - CPULib.Debugger.Variables.ESP
+					local ebpEsp = (CPULib.Debugger.Variables.EBP or 0) - (CPULib.Debugger.Variables.ESP or 0)
 					
 					if stackOffset >= 0 then
 						setHeader("PARAMETER VARIABLE")
@@ -1068,8 +1068,8 @@ if SERVER then
 		end
       end
       entity.OnVMStep = function()
-        if CurTime() - CPULib.DebuggerData[player:UserID()].PreviousUpdateTime > 0.2 then
-          CPULib.DebuggerData[player:UserID()].PreviousUpdateTime = CurTime()
+        if SysTime() - CPULib.DebuggerData[player:UserID()].PreviousUpdateTime > 0.2 then
+          CPULib.DebuggerData[player:UserID()].PreviousUpdateTime = SysTime()
 
           -- Send a fake update that messes up line pointer, updates registers
           local tempIP = entity.VM.IP
@@ -1114,7 +1114,7 @@ if SERVER then
       Entity = entity,
       Player = player,
       MemPointers = {},
-      PreviousUpdateTime = CurTime(),
+      PreviousUpdateTime = SysTime(),
     }
   end
 
@@ -1162,22 +1162,26 @@ if SERVER then
           net.WriteFloat(VM["R"..reg])
         end
       net.Send(Player)
-
-	  net.Start("CPULib.DebugData.Stack")
-	  local i
-	  local ramSize = VM.RAMSize
-	  local count = 1000
-	  net.WriteUInt(count, 16)
-	  for i = 1,count do
-		local stackAddr = VM.ESP + VM.SS + i
-		local val = 0
-		if stackAddr >= 0 and stackAddr < ramSize then
-			val = VM:ReadCell(stackAddr)
-		end
-		net.WriteFloat(val)
-	  end
-	  net.Send(Player)
     end
+	
+	if MemPointers then
+		net.Start("CPULib.DebugData.Stack")
+		local i
+		local ramSize = VM.RAMSize
+		local count = 1536
+		net.WriteUInt(count, 16)
+		for i = 1,count do
+			local stackAddr = VM.ESP + VM.SS + i
+			local val = 0
+			if stackAddr >= 0 and stackAddr < ramSize then
+				local oldTMR = VM.TMR
+				val = VM:ReadCell(stackAddr)
+				VM.TMR = oldTMR
+			end
+			net.WriteFloat(val)
+		end
+		net.Send(Player)
+	end
 
     if MemPointers then
       for msgIdx=0,math.floor(#MemPointers/60) do
@@ -1185,7 +1189,9 @@ if SERVER then
           net.WriteInt(msgIdx*60, 16)
           for varIdx=msgIdx*60,msgIdx*60+59 do
             if MemPointers[varIdx] then
+			  local oldTMR = VM.TMR
               net.WriteFloat(VM:ReadCell(MemPointers[varIdx]))
+			  VM.TMR = oldTMR
             end
           end
         net.Send(Player)
@@ -1208,6 +1214,7 @@ if SERVER then
 	  
 	  -- Same as below, not sure what LastInstruction means, but setting it to 0 makes it step one instruction.
 	  -- TODO: fix-me: This increases TMR by like a hundred thousand per step.
+	  Data.Entity.Clk = false
       Data.Entity.VMStopped = false
       Data.Entity:NextThink(CurTime())
 
@@ -1221,6 +1228,7 @@ if SERVER then
 	  
 	  
     else -- Run until instruction
+	  Data.Entity.Clk = false
       Data.Entity.VMStopped = false
       Data.Entity:NextThink(CurTime())
 
