@@ -136,60 +136,44 @@ end
 function ENT:Run()
 	-- Do not run if debugging is active
 	if self.DebuggerPlayer then return end
-	
+
+	-- Calculate time-related variables
+	local CurrentTime = SysTime()
+	local DeltaTime = math.min(1/30,CurrentTime - (self.PreviousTime or 0))
+	self.PreviousTime = CurrentTime
+
 	-- Check if need to run till specific instruction
 	if self.BreakpointInstructions then
 		self.VM.TimerDT = DeltaTime
 		self.VM.CPUIF = self
-		local stepsToDo = 20
-		for i = 1,stepsToDo do			
-			-- Calculate time-related variables
-			local CurrentTime = SysTime()
-			local DeltaTime = math.min(1/30,CurrentTime - (self.PreviousTime or 0))
-			self.PreviousTime = CurrentTime
-			self.VM.TimerDT = DeltaTime
-			
-			self.VM:Step(8,function(self)
-				-- self:Emit("VM.IP = "..(self.PrecompileIP or 0))
-				-- self:Emit("VM.XEIP = "..(self.PrecompileTrueXEIP or 0))
+		self.VM:Step(8,function(self)
+			-- self:Emit("VM.IP = "..(self.PrecompileIP or 0))
+			-- self:Emit("VM.XEIP = "..(self.PrecompileTrueXEIP or 0))
 
-				self:Dyn_Emit("if (VM.CPUIF.Clk and not VM.CPUIF.VMStopped) and (VM.CPUIF.OnVMStep) then")
-					self:Dyn_EmitState()
-					self:Emit("VM.CPUIF.OnVMStep()")
-				self:Emit("end")
-				self:Emit("if VM.CPUIF.BreakpointInstructions[VM.CS+VM.IP] then")
-					self:Dyn_EmitState()
-					self:Emit("VM.CPUIF.OnBreakpointInstruction(VM.CS+VM.IP)")
-					self:Emit("VM.CPUIF.VMStopped = true")
-					self:Emit("VM.TMR = VM.TMR + "..self.PrecompileInstruction)
-					self:Emit("VM.CODEBYTES = VM.CODEBYTES + "..self.PrecompileBytes)
-					self:Emit("if true then return end")
-				self:Emit("end")
-				self:Emit("if VM.CPUIF.LastInstruction and ((VM.IP > VM.CPUIF.LastInstruction) or VM.CPUIF.ForceLastInstruction) then")
-					self:Dyn_EmitState()
-					self:Emit("VM.CPUIF.ForceLastInstruction = nil")
-					self:Emit("VM.CPUIF.OnLastInstruction()")
-					self:Emit("VM.CPUIF.VMStopped = true")
-					self:Emit("VM.TMR = VM.TMR + "..self.PrecompileInstruction)
-					self:Emit("VM.CODEBYTES = VM.CODEBYTES + "..self.PrecompileBytes)
-					self:Emit("if true then return end")
-				self:Emit("end")
-			end)
-			
-			-- Update VM timer
-			self.VM.TIMER = self.VM.TIMER + DeltaTime
-		
-			if self.VMStopped then
-				break
-			end
-		end
+			self:Dyn_Emit("if (VM.CPUIF.Clk and not VM.CPUIF.VMStopped) and (VM.CPUIF.OnVMStep) then")
+				self:Dyn_EmitState()
+				self:Emit("VM.CPUIF.OnVMStep()")
+			self:Emit("end")
+			self:Emit("if VM.CPUIF.BreakpointInstructions[VM.CS+VM.IP] then")
+				self:Dyn_EmitState()
+				self:Emit("VM.CPUIF.OnBreakpointInstruction(VM.CS+VM.IP)")
+				self:Emit("VM.CPUIF.VMStopped = true")
+				self:Emit("VM.TMR = VM.TMR + "..self.PrecompileInstruction)
+				self:Emit("VM.CODEBYTES = VM.CODEBYTES + "..self.PrecompileBytes)
+				self:Emit("if true then return end")
+			self:Emit("end")
+			self:Emit("if VM.CPUIF.LastInstruction and (((VM.IP+VM.CS) > VM.CPUIF.LastInstruction) or VM.CPUIF.ForceLastInstruction) then")
+				self:Dyn_EmitState()
+				self:Emit("VM.CPUIF.ForceLastInstruction = nil")
+				self:Emit("VM.CPUIF.OnLastInstruction()")
+				self:Emit("VM.CPUIF.VMStopped = true")
+				self:Emit("VM.TMR = VM.TMR + "..self.PrecompileInstruction)
+				self:Emit("VM.CODEBYTES = VM.CODEBYTES + "..self.PrecompileBytes)
+				self:Emit("if true then return end")
+			self:Emit("end")
+		end)
 		self.VM.CPUIF = nil
 	else
-		-- Calculate time-related variables
-		local CurrentTime = SysTime()
-		local DeltaTime = math.min(1/30,CurrentTime - (self.PreviousTime or 0))
-		self.PreviousTime = CurrentTime
-	
 		-- How many steps VM must make to keep up with execution
 		local Cycles = math.max(1,math.floor(self.Frequency*DeltaTime*0.5))
 		self.VM.TimerDT = (DeltaTime/Cycles)
@@ -200,10 +184,10 @@ function ENT:Run()
 			self.VM:Step()
 			Cycles = Cycles - math.max(1, self.VM.TMR - previousTMR)
 		end
-		
-		-- Update VM timer
-		self.VM.TIMER = self.VM.TIMER + DeltaTime
 	end
+
+	-- Update VM timer
+	self.VM.TIMER = self.VM.TIMER + DeltaTime
 
 	-- Reset idle register
 	self.VM.Idle = 0
