@@ -539,6 +539,77 @@ function HCOMP:GetLabel(name,declareLocalVariable)
       return self.LocalLabels[trueName],true
     end
   else
+	local isAnon = (trueName[1] == '@')
+	if isAnon then
+		local anonForward = false
+		local anonOffset = 1
+		
+		local trueNameLen = string.len(trueName)
+		if trueNameLen < 2 then
+			self:Error("Anonymous label references must be in the format @XY where X is either F or B for forward and backwards respectively, and Y is the anonymous label offset. Y is optional.")
+		end
+		
+		local fOrB = trueName[2]
+		if fOrB == 'F' then
+			anonForward = true
+			--self:Error("Forward anonymous label references are not yet supported.")
+		elseif fOrB == 'B' then
+			anonForward = false
+		else
+			self:Error("Anonymous label references must be in the format @XY where X is either F or B for forward and backwards respectively, and Y is the anonymous label offset. Y is optional.")
+		end
+		
+		local anonOffsetString = string.sub(trueName, 3, trueNameLen)
+		if anonOffsetString ~= nil and string.len(anonOffsetString) > 0 then
+			anonOffset = tonumber(anonOffsetString)
+			if anonOffset == nil then
+				self:Error("Expected offset for anonymous label reference, but received '"..anonOffsetString.."' instead.")
+				anonOffset = 0
+			end
+		end
+		
+		-- Get anonymous labels
+		print("GETTING ANONYMOUS LABELS")
+		local myPos = self:CurrentSourcePosition()
+		local candidateAnonymousLabels = {}
+		for _, y in pairs(self.GlobalLabels) do
+			if y.IsAnonymous then
+				local anonPos = y.Position
+				local anonLine = anonPos.Line -- Assume there are never two anonymous labels on the same line
+				print("Checking anon label on line ".. anonLine)
+				local isCandidate = false
+				if anonForward then
+					if anonLine >= myPos.Line then
+						isCandidate = true
+					end
+				else
+					if anonLine <= myPos.Line then
+						isCandidate = true
+					end
+				end
+				
+				if isCandidate then
+					table.insert(candidateAnonymousLabels, { Line = anonLine, Label = y })
+				end
+			end
+		end
+		
+		table.sort(candidateAnonymousLabels, function(a, b)
+			if anonForward then
+				return a.Line < b.Line
+			else
+				return a.Line > b.Line
+			end
+		end)
+		
+		if anonOffset < 1 or anonOffset > #candidateAnonymousLabels then
+			self:Error("Anonymous label offset is out of range.")
+		end
+		
+		name = candidateAnonymousLabels[anonOffset].Label.Name
+		trueName = string.upper(name)
+	end
+	
     -- If in local mode then try to resolve label amongst the local ones first
     if self.LocalLabels and self.LocalLabels[trueName] then
       return self.LocalLabels[trueName],not self.LocalLabels[trueName].Defined
@@ -552,6 +623,7 @@ function HCOMP:GetLabel(name,declareLocalVariable)
         Name = name,
         Position = self:CurrentSourcePosition(),
         Referenced = true,
+		IsAnonymous = false
       }
       return self.GlobalLabels[trueName],true,false
     end
@@ -562,6 +634,12 @@ end
 
 -- Define a new label
 function HCOMP:DefineLabel(name,declareLocalVariable)
+  local isAnon = not declareLocalVariable and (name[1] == '@')
+  if isAnon then
+    -- Labels starting with @ are anonymous. Make up unique name.
+    name = "__ANONYMOUS_" .. table.Count(self.GlobalLabels)
+  end
+
   local label,isNew,wasReferenced = self:GetLabel(name,declareLocalVariable)
   if not isNew then                        --
     if label.Position then
@@ -572,6 +650,8 @@ function HCOMP:DefineLabel(name,declareLocalVariable)
     end
   end
 
+  label.IsAnonymous = isAnon
+  
   -- Clear referenced flag if required
   label.Referenced = false or wasReferenced
   return label
