@@ -324,20 +324,24 @@ function HCOMP:GenerateLeaf(leaf,needResult)
 			local myPos = label.RefPosition
 			local anonForward = label.RefForward
 			local anonOffset = label.RefOffset
+			local anonName = label.RefName
 			local candidateAnonymousLabels = {}
 			for _, y in pairs(self.GlobalLabels) do
 				if y.IsAnonymous then
 					local anonPos = y.Position
 					local anonLine = anonPos.Line -- Assume there are never two anonymous labels on the same line
-					print("Checking anon label on line ".. anonLine)
 					local isCandidate = false
-					if anonForward then
-						if anonLine >= myPos.Line then
-							isCandidate = true
-						end
-					else
-						if anonLine <= myPos.Line then
-							isCandidate = true
+					if anonName == nil or y.AnonymousName == anonName then
+						if y.Position.File == label.Position.File then
+							if anonForward then
+								if anonLine >= myPos.Line then
+									isCandidate = true
+								end
+							else
+								if anonLine <= myPos.Line then
+									isCandidate = true
+								end
+							end
 						end
 					end
 					
@@ -356,7 +360,7 @@ function HCOMP:GenerateLeaf(leaf,needResult)
 			end)
 			
 			if anonOffset < 1 or anonOffset > #candidateAnonymousLabels then
-				self:Error("Anonymous label offset is out of range.")
+				self:Error("No anonymous label in range. Check offset or name.",self.ErrorReportLeaf)
 			end
 			
 			label = candidateAnonymousLabels[anonOffset].Label
