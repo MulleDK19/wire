@@ -546,7 +546,7 @@ function HCOMP:GetLabel(name,declareLocalVariable)
 		
 		local trueNameLen = string.len(trueName)
 		if trueNameLen < 2 then
-			self:Error("Anonymous label references must be in the format @XY where X is either F or B for forward and backwards respectively, and Y is the anonymous label offset. Y is optional.")
+			self:Error("1Anonymous label references must be in the format @XY where X is either F or B for forward and backwards respectively, and Y is the anonymous label offset. Y is optional.")
 		end
 		
 		local fOrB = trueName[2]
@@ -556,7 +556,7 @@ function HCOMP:GetLabel(name,declareLocalVariable)
 		elseif fOrB == 'B' then
 			anonForward = false
 		else
-			self:Error("Anonymous label references must be in the format @XY where X is either F or B for forward and backwards respectively, and Y is the anonymous label offset. Y is optional.")
+			self:Error("2Anonymous label references must be in the format @XY where X is either F or B for forward and backwards respectively, and Y is the anonymous label offset. Y is optional.")
 		end
 		
 		local anonOffsetString = string.sub(trueName, 3, trueNameLen)
@@ -568,8 +568,23 @@ function HCOMP:GetLabel(name,declareLocalVariable)
 			end
 		end
 		
+		-- We return a special 'label' that we use to resolve the actual label later.
+		local anonRef =
+		{
+		  Type = "Unknown",
+		  Name = nil,
+		  Position = self:CurrentSourcePosition(),
+		  Referenced = true,
+		  IsAnonymous = true,
+		  RefPosition = self:CurrentSourcePosition(),
+		  RefForward = anonForward,
+		  RefOffset = anonOffset
+		}
+        
+		return anonRef,true,false
+		
 		-- Get anonymous labels
-		print("GETTING ANONYMOUS LABELS")
+		--[[print("GETTING ANONYMOUS LABELS")
 		local myPos = self:CurrentSourcePosition()
 		local candidateAnonymousLabels = {}
 		for _, y in pairs(self.GlobalLabels) do
@@ -607,7 +622,7 @@ function HCOMP:GetLabel(name,declareLocalVariable)
 		end
 		
 		name = candidateAnonymousLabels[anonOffset].Label.Name
-		trueName = string.upper(name)
+		trueName = string.upper(name)]]
 	end
 	
     -- If in local mode then try to resolve label amongst the local ones first

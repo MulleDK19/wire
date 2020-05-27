@@ -319,8 +319,60 @@ function HCOMP:GenerateLeaf(leaf,needResult)
       elseif label.Type == "Pointer" then
         leaf.Operands[i].Constant = label.Expression or {{ Type = self.TOKEN.IDENT, Data = label.Name, Position = self.ErrorReportLeaf.CurrentPosition }}
       else
-        if not label.Name then self:Error("Internal error 033") end
-        self:Error("Undefined label: "..label.Name,self.ErrorReportLeaf)
+		if label.IsAnonymous then
+			-- Anonymous label ref. Resolve the actual label.
+			local myPos = label.RefPosition
+			local anonForward = label.RefForward
+			local anonOffset = label.RefOffset
+			local candidateAnonymousLabels = {}
+			for _, y in pairs(self.GlobalLabels) do
+				if y.IsAnonymous then
+					local anonPos = y.Position
+					local anonLine = anonPos.Line -- Assume there are never two anonymous labels on the same line
+					print("Checking anon label on line ".. anonLine)
+					local isCandidate = false
+					if anonForward then
+						if anonLine >= myPos.Line then
+							isCandidate = true
+						end
+					else
+						if anonLine <= myPos.Line then
+							isCandidate = true
+						end
+					end
+					
+					if isCandidate then
+						table.insert(candidateAnonymousLabels, { Line = anonLine, Label = y })
+					end
+				end
+			end
+			
+			table.sort(candidateAnonymousLabels, function(a, b)
+				if anonForward then
+					return a.Line < b.Line
+				else
+					return a.Line > b.Line
+				end
+			end)
+			
+			if anonOffset < 1 or anonOffset > #candidateAnonymousLabels then
+				self:Error("Anonymous label offset is out of range.")
+			end
+			
+			label = candidateAnonymousLabels[anonOffset].Label
+			leaf.Operands[i].Constant =
+			{
+				{
+					Data = label.Name,
+					Position = label.Position,
+					Type = self.TOKEN.IDENT
+				},				
+				TokenList = true
+			}
+		else
+			if not label.Name then self:Error("Internal error 033") end
+			self:Error("Undefined labels: "..label.Name,self.ErrorReportLeaf)
+		end
       end
     end
     if leaf.Operands[i].MemoryPointer and
