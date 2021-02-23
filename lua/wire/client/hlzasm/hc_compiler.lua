@@ -655,7 +655,7 @@ function HCOMP:DefineLabel(name,declareLocalVariable)
 	end
 	
     -- Make up unique name.
-    name = "__ANONYMOUS_" .. table.Count(self.GlobalLabels)
+    name = "__ANONYMOUS_" .. table.Count(self.GlobalLabels) .. "_" .. anonName
   end
 
   local label,isNew,wasReferenced = self:GetLabel(name,declareLocalVariable)

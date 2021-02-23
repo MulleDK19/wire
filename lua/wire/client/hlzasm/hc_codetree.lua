@@ -392,8 +392,66 @@ function HCOMP:GenerateLeaf(leaf,needResult)
       elseif label.Type == "Register" then
         leaf.Operands[i].MemoryPointer = { MemoryRegister = label.Value }
       else
-        if not label.Name then self:Error("Internal error 033") end
-        self:Error("Undefined label: "..label.Name,self.ErrorReportLeaf)
+			-- TODO: REFACTOR WITH IDENTICAL CODE ABOVE
+		if label.IsAnonymous then
+			-- Anonymous label ref. Resolve the actual label.
+			local myPos = label.RefPosition
+			local anonForward = label.RefForward
+			local anonOffset = label.RefOffset
+			local anonName = label.RefName
+			local candidateAnonymousLabels = {}
+			for _, y in pairs(self.GlobalLabels) do
+				if y.IsAnonymous then
+					local anonPos = y.Position
+					local anonLine = anonPos.Line -- Assume there are never two anonymous labels on the same line
+					local isCandidate = false
+					if anonName == nil or y.AnonymousName == anonName then
+						if y.Position.File == label.Position.File then
+							if anonForward then
+								if anonLine >= myPos.Line then
+									isCandidate = true
+								end
+							else
+								if anonLine <= myPos.Line then
+									isCandidate = true
+								end
+							end
+						end
+					end
+					
+					if isCandidate then
+						table.insert(candidateAnonymousLabels, { Line = anonLine, Label = y })
+					end
+				end
+			end
+			
+			table.sort(candidateAnonymousLabels, function(a, b)
+				if anonForward then
+					return a.Line < b.Line
+				else
+					return a.Line > b.Line
+				end
+			end)
+			
+			if anonOffset < 1 or anonOffset > #candidateAnonymousLabels then
+				self:Error("No anonymous label in range. Check offset or name.",self.ErrorReportLeaf)
+			end
+			
+			label = candidateAnonymousLabels[anonOffset].Label
+			leaf.Operands[i].MemoryPointer =
+			{
+				{
+					Data = label.Name,
+					Position = label.Position,
+					Type = self.TOKEN.IDENT
+				},
+				
+				TokenList = true
+			}
+		else
+			if not label.Name then self:Error("Internal error 033") end
+			self:Error("Undefined label: "..label.Name,self.ErrorReportLeaf)
+		end
       end
     end
 

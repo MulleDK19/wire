@@ -364,9 +364,14 @@ function HCOMP:PrintBlock(block,file,isLibrary)
         end
       elseif block.Operands[i].Memory then
         if istable(block.Operands[i].Memory) then
-          if block.Operands[i].Memory.Value
-          then printText = printText .. "#" .. block.Operands[i].Memory.Value
-          else printText = printText .. "#" .. block.Operands[i].Memory.Name
+          if block.Operands[i].Memory.Value then
+			printText = printText .. "#" .. block.Operands[i].Memory.Value
+          else
+			if block.Operands[i].Memory.Name ~= nil then
+				printText = printText .. "#" .. block.Operands[i].Memory.Name
+			else
+				printText = printText .. "#" .. block.Operands[i].Memory[1].Data
+			end
           end
         else
           printText = printText .. "#" .. block.Operands[i].Memory
