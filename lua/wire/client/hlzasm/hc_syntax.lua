@@ -753,9 +753,11 @@ function HCOMP:Statement() local TOKEN = self.TOKEN
 	while not(self:MatchToken(TOKEN.EOF)) do
       if self:MatchToken(TOKEN.IDENT) then
         if(self:PeekToken() == TOKEN.DCOLON) then
-          local label = self:DefineLabel(self.TokenData)
-          label.Type = "Pointer"
-          label.Defined = true
+          if self.TokenData[1] ~= "@" then
+          	local label = self:DefineLabel(self.TokenData)
+          	label.Type = "Pointer"
+          	label.Defined = true
+          end
         else
           self:PreviousToken()
         end
@@ -1488,7 +1490,8 @@ function HCOMP:Statement() local TOKEN = self.TOKEN
   self:SaveParserState()
 
   if self:MatchToken(TOKEN.IDENT) then
-    if (self:PeekToken() == TOKEN.COMMA) then
+    if (self:PeekToken() == TOKEN.COMMA) or (self:PeekToken() == TOKEN.DCOLON and self.TokenData[1] == "@") then
+      local lol = (self:PeekToken() == TOKEN.DCOLON and self.TokenData[1] == "@")
       -- Label definition for sure
       while true do
         local label = self:DefineLabel(self.TokenData)
@@ -1503,6 +1506,9 @@ function HCOMP:Statement() local TOKEN = self.TOKEN
         self:MatchToken(TOKEN.COMMA)
         if not self:MatchToken(TOKEN.IDENT) then break end
       end
+	  if lol then
+	  	self:ExpectToken(TOKEN.DCOLON)
+	  end
       self:MatchToken(TOKEN.COLON)
       return true
     elseif (self:PeekToken() == TOKEN.DCOLON) then
