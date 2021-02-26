@@ -1947,6 +1947,12 @@ function Editor:Setup(nTitle, nLocation, nEditorType)
 		DebugRun:SetText("Run")
 		DebugRun.DoClick = function() RunConsoleCommand("wire_cpulib_debugrun") end
 		self.C.DebugRun = DebugRun
+		
+		-- Add "re-upload" button
+		local DebugReUpload = self:addComponent(vgui.Create("Button", self), -541, 31, -400, 20)
+		DebugReUpload:SetText("Re-upload to CPU")
+		DebugReUpload.DoClick = function() RunConsoleCommand("wire_cpulib_reupload") end
+		self.C.DebugReUpload = DebugReUpload
 	end
 
 	if nEditorType == "E2" then

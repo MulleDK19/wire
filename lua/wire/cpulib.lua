@@ -1241,6 +1241,19 @@ if SERVER then
     end
     CPULib.SendDebugData(Data.Entity.VM,Data.MemPointers,Data.Player)
   end)
+  
+  -- Concommand to upload to attached CPU
+  concommand.Add("wire_cpulib_reupload", function(player, command, args)
+    local Data = CPULib.DebuggerData[player:UserID()]
+    if (not Data) or (Data.Player ~= player) then return end
+    if not IsValid(Data.Entity) then return end
+
+	if Data.Entity then
+		CPULib.SetUploadTarget(Data.Entity, Data.Player)
+		net.Start("ZCPU_RequestCode") net.Send(Data.Player)
+		net.Start("CPULib.InvalidateDebugger") net.WriteUInt(0,2) net.Send(Data.Player)
+	end
+  end)
 
   -- Concommand to run till breakpoint
   concommand.Add("wire_cpulib_debugrun", function(player, command, args)
